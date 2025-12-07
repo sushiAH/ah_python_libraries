@@ -1,4 +1,8 @@
-"""uart通信プロトコルライブラリ"""
+"""uart通信プロトコルライブラリ
+パケット構造
+  header : 1byte
+  packet_length : 1byte
+"""
 
 import time
 import serial
@@ -6,7 +10,7 @@ import struct
 import numpy as np
 
 
-def send_4value_by_one_pakcet(table_addr, target_1, target_2, target_3, target_4, ser):
+def send_4value_by_one_packet(table_addr, target_1, target_2, target_3, target_4, ser):
     """4つの値を一つのパケットにまとめてuart通信で送信する
 
     Args:
@@ -24,7 +28,7 @@ def send_4value_by_one_pakcet(table_addr, target_1, target_2, target_3, target_4
     target_3 = int(target_3 * 1000)
     target_4 = int(target_4 * 1000)
 
-    # int32をバイト列に変換し、パケットに加える
+    # int32をバイト列に変換
     byte_array_1 = from_int32_to_bytes(target_1)
     byte_array_2 = from_int32_to_bytes(target_2)
     byte_array_3 = from_int32_to_bytes(target_3)

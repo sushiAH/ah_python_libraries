@@ -66,17 +66,3 @@ def receive_packet(packet_len, ser):
     packet = struct.unpack(PACKET_STRUCT_FORMAT, full_packet_bin)
 
     return packet
-
-
-def main():
-    ser = serial.Serial(port="/dev/ttyACM0", baudrate=115200)
-    packet_len = 42
-
-    while 1:
-        packet = receive_packet(packet_len, ser)
-        if packet != None:
-            print(packet[9])
-        time.sleep(0.005)
-
-
-main()
