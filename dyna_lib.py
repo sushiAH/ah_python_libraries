@@ -1,3 +1,5 @@
+"""dynamixel python library"""
+
 # usr/bin/env python3
 import os
 import struct
@@ -34,6 +36,7 @@ if MY_DXL == "X_SERIES" or MY_DXL == "MX_SERIES":
     BAUDRATE = 115200
 
     LEN_GOAL_POSITION = 4
+    LEN_GOAL_VELOCITY = 4
 
 
 elif MY_DXL == "PRO_SERIES":
@@ -67,40 +70,82 @@ elif MY_DXL == "XL320":
     BAUDRATE = 1000000  # Default Baudrate of XL-320 is 1Mbps
 
 
-def goal_pos_to_4byte(goal_pos):
-    param_goal_position = [
-        DXL_LOBYTE(DXL_LOWORD(goal_pos)),
-        DXL_HIBYTE(DXL_LOWORD(dxl_goal_position)),
-        DXL_LOBYTE(DXL_HIWORD(dxl_goal_position)),
-        DXL_HIBYTE(DXL_HIWORD(dxl_goal_position)),
+def goal_to_4byte(goal):
+    """goalをバイト列に分割する
+
+    Args:
+        goal (int32_t): []
+
+    Returns:
+        バイト列のリスト
+    """
+
+    param_goal = [
+        DXL_LOBYTE(DXL_LOWORD(goal)),
+        DXL_HIBYTE(DXL_LOWORD(goal)),
+        DXL_LOBYTE(DXL_HIWORD(goal)),
+        DXL_HIBYTE(DXL_HIWORD(goal)),
     ]
-    return param_goal_position
+    return param_goal
 
 
 class dxl_controller:
-    """dynamixel controller class"""
+    """dynamixel controller class
+
+    Attributes:
+        portHandler:
+        packetHandler:
+        groupSyncWrite_pos:
+        groupSyncWrite_vel:
+        dxl_id: dynamixel id
+    """
+
+    groupSyncWrite_pos = None
+    groupSyncWrite_vel = None
+
+    portHandler = None
+    packetHandler = None
 
     def __init__(self, port_name, dxl_id, mode):
         PROTOCOL_VERSION = 2.0
 
-        self.portHandler = PortHandler(port_name)
-        self.packetHandler = PacketHandler(PROTOCOL_VERSION)
-        self.groupSyncWrite = GroupSyncWrite(
-            self.portHandler, self.packetHandler, ADDR_GOAL_POSITION, LEN_GOAL_POSITION
-        )
+        if dxl_controller.portHandler == None:
+
+            dxl_controller.portHandler = PortHandler(port_name)
+            dxl_controller.packetHandler = PacketHandler(PROTOCOL_VERSION)
+
+            dxl_controller.groupSyncWrite_pos = GroupSyncWrite(
+                dxl_controller.portHandler,
+                dxl_controller.packetHandler,
+                ADDR_GOAL_POSITION,
+                LEN_GOAL_POSITION,
+            )
+            dxl_controller.groupSyncWrite_vel = GroupSyncWrite(
+                dxl_controller.portHandler,
+                dxl_controller.packetHandler,
+                ADDR_GOAL_VELOCITY,
+                LEN_GOAL_VELOCITY,
+            )
+            dxl_controller.portHandler.openPort()
+            dxl_controller.portHandler.setBaudRate(BAUDRATE)
 
         self.dxl_id = dxl_id
-
-        self.portHandler.openPort()
-        self.portHandler.setBaudRate(BAUDRATE)
-
         self.set_torque(0)
         self.set_mode(mode)
         self.set_torque(1)
 
     def set_torque(self, torque):
-        dxl_comm_result, dxl_error = self.packetHandler.write1ByteTxRx(
-            self.portHandler, self.dxl_id, ADDR_TORQUE_ENABLE, torque
+        """set_torque
+
+        Args:
+            torque (bool): ON 1
+                           OFF 0
+
+        Returns:
+            result,error
+        """
+        dxl_comm_result, dxl_error = dxl_controller.packetHandler.write1ByteTxRx(
+            dxl_controller.portHandler, self.dxl_id, ADDR_TORQUE_ENABLE, torque
         )
         return dxl_comm_result, dxl_error
 
@@ -111,60 +156,73 @@ class dxl_controller:
         extended pos    4
         """
 
-        dxl_comm_result, dxl_error = self.packetHandler.write1ByteTxRx(
-            self.portHandler, self.dxl_id, ADDR_CHANGE_MODE, dyna_mode
+        dxl_comm_result, dxl_error = dxl_controller.packetHandler.write1ByteTxRx(
+            dxl_controller.portHandler, self.dxl_id, ADDR_CHANGE_MODE, dyna_mode
         )
         return dxl_comm_result, dxl_error
 
     def write_pos(self, goal_pos):
         # absolute goal_pos range is 0 ~ 4095
-        dxl_comm_result, dxl_error = self.packetHandler.write4ByteTxRx(
-            self.portHandler, self.dxl_id, ADDR_GOAL_POSITION, goal_pos
+        dxl_comm_result, dxl_error = dxl_controller.packetHandler.write4ByteTxRx(
+            dxl_controller.portHandler, self.dxl_id, ADDR_GOAL_POSITION, goal_pos
         )
         return dxl_comm_result, dxl_error
 
     def write_vel(self, goal_vel):
         # goal_vel range is 0~1023
-        dxl_comm_result, dxl_error = self.packetHandler.write4ByteTxRx(
-            self.portHandler, self.dxl_id, ADDR_GOAL_VELOCITY, goal_vel
+        dxl_comm_result, dxl_error = dxl_controller.packetHandler.write4ByteTxRx(
+            dxl_controller.portHandler, self.dxl_id, ADDR_GOAL_VELOCITY, goal_vel
         )
         return dxl_comm_result, dxl_error
 
-    def write_pos_pid(self, p_gain):
-        dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(
-            self.portHandler, self.dxl_id, ADDR_POS_P_GAIN, p_gain
+    def write_pos_p_gain(self, p_gain):
+        dxl_comm_result, dxl_error = dxl_controller.packetHandler.write2ByteTxRx(
+            dxl_controller.portHandler, self.dxl_id, ADDR_POS_P_GAIN, p_gain
         )
         return dxl_comm_result, dxl_error
 
-    def add_sync_param(self, goal_pos):
-        param_goal_pos = goal_pos_to_4byte(goal_pos)
-        self.groupSyncWrite.addParam(self.dxl_id, param_goal_pos)
+    def add_sync_param_pos(self, goal_pos):
+        """
 
-    def write_group_dyna(self):
-        self.groupSyncWrite.txPacket()
-        self.groupSyncWrite.clearParam()
+        Args:
+            goal_pos ([TODO:parameter]): [TODO:description]
+        """
+        param_goal_pos = goal_to_4byte(goal_pos)
+        dxl_controller.groupSyncWrite_pos.addParam(self.dxl_id, param_goal_pos)
+
+    def write_group_dyna_pos(self):
+        dxl_controller.groupSyncWrite_pos.txPacket()
+        dxl_controller.groupSyncWrite_pos.clearParam()
+
+    def add_sync_param_vel(self, goal_vel):
+        param_goal_vel = goal_to_4byte(goal_vel)
+        dxl_controller.groupSyncWrite_vel.addParam(self.dxl_id, param_goal_vel)
+
+    def write_group_dyna_vel(self):
+        dxl_controller.groupSyncWrite_vel.txPacket()
+        dxl_controller.groupSyncWrite_vel.clearParam()
 
     def write_goal_pwm(self, goal_pwm):
-        dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(
-            self.portHandler, self.dxl_id, ADDR_GOAL_PWM, goal_pwm
+        dxl_comm_result, dxl_error = dxl_controller.packetHandler.write2ByteTxRx(
+            dxl_controller.portHandler, self.dxl_id, ADDR_GOAL_PWM, goal_pwm
         )
         return dxl_comm_result, dxl_error
 
     def read_pos(self):
         dxl_present_position, dxl_comm_result, dxl_error = (
-            self.packetHandler.read4ByteTxRx(
-                self.portHandler, self.dxl_id, ADDR_PRESENT_POSITION
+            dxl_controller.packetHandler.read4ByteTxRx(
+                dxl_controller.portHandler, self.dxl_id, ADDR_PRESENT_POSITION
             )
         )
         return dxl_present_position
 
     def read_vel(self):
         dxl_present_velocity, dxl_comm_result, dxl_error = (
-            self.packetHandler.read4ByteTxRx(
-                self.portHandler, self.dxl_id, ADDR_PRESENT_VELOCITY
+            dxl_controller.packetHandler.read4ByteTxRx(
+                dxl_controller.portHandler, self.dxl_id, ADDR_PRESENT_VELOCITY
             )
         )
         return dxl_present_velocity
 
     def close_port(self):
-        self.portHandler.closePort()
+        dxl_controller.portHandler.closePort()

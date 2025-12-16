@@ -1,5 +1,6 @@
-#!/usr/bin/env python3
 """マイコンへcanを送信するライブラリ"""
+
+#!/usr/bin/env python3
 
 
 import asyncio
@@ -63,14 +64,16 @@ def send_packet_4byte(can_id, table_addr, data, bus):
         data 1byte
         bus can_bus
     """
-    byte1, byte2, byte3, byte4 = split_data_to_4byte(data)
+
+    data_int = int(data * 1000)
+    byte1, byte2, byte3, byte4 = from_int32_to_bytes(data_int)
     packet = [table_addr, byte1, byte2, byte3, byte4]
 
     msg = can.Message(arbitration_id=can_id, data=packet, is_extended_id=False)
     bus.send(msg)
 
 
-def split_data_to_4byte(data):
+def from_int32_to_bytes(data):
     """リトルエンディアンでint32をバイト列に変換し、tupleで返す
 
     Args:
@@ -85,22 +88,6 @@ def split_data_to_4byte(data):
     byte1 = (data) & 0xFF  # 最下位bit
 
     return (byte1, byte2, byte3, byte4)
-
-
-def receive_frame(bus, period):
-    recv_msg = bus.recv(timeout=period)
-    if recv_msg != None:
-        motor_id = recv_msg.arbitration_id - 20
-        if motor_id >= 0 and motor_id <= 3:
-            target = (
-                (recv_msg.data[0] << 24)
-                | (recv_msg.data[1] << 16)
-                | (recv_msg.data[2] << 8)
-                | (recv_msg.data[3])
-            )
-            target = struct.pack("<I", target)
-            target = struct.unpack("<i", target)[0]
-            data_array[motor_id] = target
 
 
 def receive_frame(bus, period, data_array):

@@ -57,8 +57,7 @@ def send_packet_1byte(motor_id, table_addr, data, ser):
     check_sum_val = calc_checksum(packet)
     packet.append(check_sum_val)
 
-    for i in range(0, len(packet)):
-        ser.write(bytes([packet[i]]))
+    ser.write(bytes(packet))
 
 
 # 4byte送信用
