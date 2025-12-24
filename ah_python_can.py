@@ -24,7 +24,7 @@ import struct
 def send_read_vel_instruction(can_id, bus):
     """速度　read命令を送信する"""
 
-    current_vel_table_addr = 4
+    current_vel_table_addr = 5
 
     packet = [current_vel_table_addr]
     msg = can.Message(arbitration_id=can_id, data=packet, is_extended_id=False)
@@ -34,7 +34,7 @@ def send_read_vel_instruction(can_id, bus):
 def send_read_pos_instruction(can_id, bus):
     """角度　read命令を送信する"""
 
-    current_pos_table_addr = 3
+    current_pos_table_addr = 4
 
     packet = [current_pos_table_addr]
     msg = can.Message(arbitration_id=can_id, data=packet, is_extended_id=False)
@@ -96,10 +96,12 @@ def receive_frame(bus, period, data_array):
     if recv_msg == None:
         return None
 
-    motor_id = recv_msg.arbitration_id - 20
+    motor_id = (recv_msg.arbitration_id & 0x00F) - 3
 
-    if not motor_id >= 0 and motor_id <= 3:
+    if motor_id < 0 or motor_id > 3:
         return None
+
+    print(motor_id)
 
     target = (
         (recv_msg.data[0] << 24)

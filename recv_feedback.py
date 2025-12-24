@@ -1,4 +1,4 @@
-"""esp32から、feedbackデータのパケットを受け取り、publishする"""
+"""esp32から、feedbackデータのパケットを受け取り、publishするためのlibrary"""
 
 import serial
 import time
