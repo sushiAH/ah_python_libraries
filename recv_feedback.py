@@ -21,7 +21,7 @@ def calc_checksum(packet_data):
     return checksum_val
 
 
-def receive_packet(packet_len, ser):
+def receive_packet(struct_format, ser):
     """esp32からパケットを受け取る
 
     Args:
@@ -32,13 +32,15 @@ def receive_packet(packet_len, ser):
     Returns:
         bytes | None: 受信パケットデータ。エラー時 None
     """
-    PACKET_STRUCT_FORMAT = "<BIfffffffffB"
+
     HEADER = 0xAA
+
+    packet_len = struct.calcsize(struct_format)
 
     # headerの受取
     recv_header = ser.read(1)
     if len(recv_header) < 1:
-        print("headerが受け取れていません")
+        #print("受信キューが空です")
         return None
     if recv_header[0] != HEADER:
         print("headerが誤っています", recv_header[0])
@@ -63,6 +65,6 @@ def receive_packet(packet_len, ser):
         return None
 
     # binaryから変換
-    packet = struct.unpack(PACKET_STRUCT_FORMAT, full_packet_bin)
+    packet = struct.unpack(struct_format, full_packet_bin)
 
     return packet
