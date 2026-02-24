@@ -96,14 +96,14 @@ def receive_frame(bus, period, data_array):
         return None
 
     motor_id = (recv_msg.arbitration_id & 0x00F) - 3
+    print(motor_id)
 
     if motor_id < 0 or motor_id > 3:
         return None
 
-    print(motor_id)
-
     target = ((recv_msg.data[0] << 24) | (recv_msg.data[1] << 16) |
               (recv_msg.data[2] << 8) | (recv_msg.data[3]))
+
     target = struct.pack("<I", target)
     target = struct.unpack("<i", target)[0]
     data_array[motor_id] = target
