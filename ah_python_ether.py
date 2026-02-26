@@ -16,10 +16,9 @@ def init_udp():
 def udp_send(esp32_id, motor_id, table_addr, data, sock):
     ESP32_IP = "192.168.10." + str(esp32_id)
     ESP32_PORT = 8888
-    packet_format = "<IIII"
+    packet_format = "<III"  # I=uint32_t
 
-    binary_data = struct.pack(packet_format, esp32_id, motor_id, table_addr,
-                              data, sock)
+    binary_data = struct.pack(packet_format, motor_id, table_addr, data)
     sock.sendto(binary_data, (ESP32_IP, ESP32_PORT))
 
 
