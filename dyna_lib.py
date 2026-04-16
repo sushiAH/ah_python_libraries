@@ -3,6 +3,7 @@
 # usr/bin/env python3
 import os
 import struct
+import threading
 from dynamixel_sdk import *  # Uses Dynamixel SDK library
 
 # ********* DYNAMIXEL Model definition *********
@@ -34,7 +35,7 @@ if MY_DXL == "X_SERIES" or MY_DXL == "MX_SERIES":
     DXL_MAXIMUM_POSITION_VALUE = (
         4095  # Refer to the Maximum Position Limit of product eManual
     )
-    BAUDRATE = 1000000
+    BAUDRATE = 115200
 
     LEN_GOAL_POSITION = 4
     LEN_GOAL_VELOCITY = 4
@@ -110,6 +111,8 @@ class dxl_controller:
     portHandler = None
     packetHandler = None
 
+    _lock = threading.Lock()
+
     def __init__(self, port_name, dxl_id, mode):
         PROTOCOL_VERSION = 2.0
 
@@ -151,8 +154,10 @@ class dxl_controller:
         Returns:
             result,error
         """
-        dxl_comm_result, dxl_error = dxl_controller.packetHandler.write1ByteTxRx(
-            dxl_controller.portHandler, self.dxl_id, ADDR_TORQUE_ENABLE, torque)
+        with dxl_controller._lock:
+            dxl_comm_result, dxl_error = dxl_controller.packetHandler.write1ByteTxRx(
+                dxl_controller.portHandler, self.dxl_id, ADDR_TORQUE_ENABLE,
+                torque)
         return dxl_comm_result, dxl_error
 
     def set_mode(self):
@@ -166,9 +171,10 @@ class dxl_controller:
         if self.mode == 4:
             self.initialize_pos = self.read_pos()
 
-        dxl_comm_result, dxl_error = dxl_controller.packetHandler.write1ByteTxRx(
-            dxl_controller.portHandler, self.dxl_id, ADDR_CHANGE_MODE,
-            self.mode)
+        with dxl_controller._lock:
+            dxl_comm_result, dxl_error = dxl_controller.packetHandler.write1ByteTxRx(
+                dxl_controller.portHandler, self.dxl_id, ADDR_CHANGE_MODE,
+                self.mode)
         return dxl_comm_result, dxl_error
 
     def write_pos(self, goal_pos):
@@ -179,27 +185,39 @@ class dxl_controller:
         if self.mode == 4:
             goal_pos = goal_pos + self.initialize_pos
 
-        dxl_comm_result, dxl_error = dxl_controller.packetHandler.write4ByteTxRx(
-            dxl_controller.portHandler, self.dxl_id, ADDR_GOAL_POSITION,
-            goal_pos)
+        with dxl_controller._lock:
+            dxl_comm_result, dxl_error = dxl_controller.packetHandler.write4ByteTxRx(
+                dxl_controller.portHandler, self.dxl_id, ADDR_GOAL_POSITION,
+                goal_pos)
         return dxl_comm_result, dxl_error
 
     def write_vel(self, goal_vel):
         # goal_vel range is 0~1023
-        dxl_comm_result, dxl_error = dxl_controller.packetHandler.write4ByteTxRx(
-            dxl_controller.portHandler, self.dxl_id, ADDR_GOAL_VELOCITY,
-            goal_vel)
+        with dxl_controller._lock:
+            dxl_comm_result, dxl_error = dxl_controller.packetHandler.write4ByteTxRx(
+                dxl_controller.portHandler, self.dxl_id, ADDR_GOAL_VELOCITY,
+                goal_vel)
         return dxl_comm_result, dxl_error
 
     def write_profile_vel(self, profile_vel):
-        dxl_comm_result, dxl_error = dxl_controller.packetHandler.write4ByteTxRx(
-            dxl_controller.portHandler, self.dxl_id, ADDR_PROFILE_VEL,
-            profile_vel)
+        with dxl_controller._lock:
+            dxl_comm_result, dxl_error = dxl_controller.packetHandler.write4ByteTxRx(
+                dxl_controller.portHandler, self.dxl_id, ADDR_PROFILE_VEL,
+                profile_vel)
+        return dxl_comm_result, dxl_error
+
+    def write_profile_accel(self, profile_accel):
+        with dxl_controller._lock:
+            dxl_comm_result, dxl_error = dxl_controller.packetHandler.write4ByteTxRx(
+                dxl_controller.portHandler, self.dxl_id,
+                ADDR_PROFILE_ACCELERATION, profile_accel)
         return dxl_comm_result, dxl_error
 
     def write_pos_p_gain(self, p_gain):
-        dxl_comm_result, dxl_error = dxl_controller.packetHandler.write2ByteTxRx(
-            dxl_controller.portHandler, self.dxl_id, ADDR_POS_P_GAIN, p_gain)
+        with dxl_controller._lock:
+            dxl_comm_result, dxl_error = dxl_controller.packetHandler.write2ByteTxRx(
+                dxl_controller.portHandler, self.dxl_id, ADDR_POS_P_GAIN,
+                p_gain)
         return dxl_comm_result, dxl_error
 
     def add_sync_param_pos(self, goal_pos):
@@ -208,37 +226,48 @@ class dxl_controller:
         Args:
             goal_pos ([TODO:parameter]): [TODO:description]
         """
+
+        if self.mode == 4:
+            goal_pos = goal_pos + self.initialize_pos
         param_goal_pos = goal_to_4byte(goal_pos)
         dxl_controller.groupSyncWrite_pos.addParam(self.dxl_id, param_goal_pos)
 
     def write_group_dyna_pos(self):
-        dxl_controller.groupSyncWrite_pos.txPacket()
-        dxl_controller.groupSyncWrite_pos.clearParam()
+        with dxl_controller._lock:
+            dxl_controller.groupSyncWrite_pos.txPacket()
+            dxl_controller.groupSyncWrite_pos.clearParam()
 
     def add_sync_param_vel(self, goal_vel):
         param_goal_vel = goal_to_4byte(goal_vel)
         dxl_controller.groupSyncWrite_vel.addParam(self.dxl_id, param_goal_vel)
 
     def write_group_dyna_vel(self):
-        dxl_controller.groupSyncWrite_vel.txPacket()
-        dxl_controller.groupSyncWrite_vel.clearParam()
+        with dxl_controller._lock:
+            dxl_controller.groupSyncWrite_vel.txPacket()
+            dxl_controller.groupSyncWrite_vel.clearParam()
 
     def write_goal_pwm(self, goal_pwm):
-        dxl_comm_result, dxl_error = dxl_controller.packetHandler.write2ByteTxRx(
-            dxl_controller.portHandler, self.dxl_id, ADDR_GOAL_PWM, goal_pwm)
+        with dxl_controller._lock:
+            dxl_comm_result, dxl_error = dxl_controller.packetHandler.write2ByteTxRx(
+                dxl_controller.portHandler, self.dxl_id, ADDR_GOAL_PWM,
+                goal_pwm)
         return dxl_comm_result, dxl_error
 
     def read_pos(self):
-        dxl_present_position, dxl_comm_result, dxl_error = (
-            dxl_controller.packetHandler.read4ByteTxRx(
-                dxl_controller.portHandler, self.dxl_id, ADDR_PRESENT_POSITION))
+        with dxl_controller._lock:
+            dxl_present_position, dxl_comm_result, dxl_error = (
+                dxl_controller.packetHandler.read4ByteTxRx(
+                    dxl_controller.portHandler, self.dxl_id,
+                    ADDR_PRESENT_POSITION))
         dxl_present_position = from_uint32_to_int32(dxl_present_position)
         return dxl_present_position
 
     def read_vel(self):
-        dxl_present_velocity, dxl_comm_result, dxl_error = (
-            dxl_controller.packetHandler.read4ByteTxRx(
-                dxl_controller.portHandler, self.dxl_id, ADDR_PRESENT_VELOCITY))
+        with dxl_controller._lock:
+            dxl_present_velocity, dxl_comm_result, dxl_error = (
+                dxl_controller.packetHandler.read4ByteTxRx(
+                    dxl_controller.portHandler, self.dxl_id,
+                    ADDR_PRESENT_VELOCITY))
 
         dxl_present_velocity = from_uint32_to_int32(dxl_present_velocity)
         return dxl_present_velocity

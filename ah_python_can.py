@@ -35,6 +35,7 @@ import struct
 
 def send_packet_1byte(can_id, table_addr, data, bus):
     """1byte送信
+    1000はかけずに、そのまま送信する
 
     Args:
         can_id
@@ -49,6 +50,7 @@ def send_packet_1byte(can_id, table_addr, data, bus):
 
 def send_packet_4byte(can_id, table_addr, data, bus):
     """4byte送信
+    1000をかけて送信する、受信先で1000で割る
 
     Args:
         can_id
@@ -59,7 +61,7 @@ def send_packet_4byte(can_id, table_addr, data, bus):
 
     data_int = int(data * 1000)
     byte1, byte2, byte3, byte4 = from_int32_to_bytes(data_int)
-    packet = [table_addr, byte1, byte2, byte3, byte4]
+    packet = [table_addr, byte1, byte2, byte3, byte4]  #リトルエンディアン
 
     msg = can.Message(arbitration_id=can_id, data=packet, is_extended_id=False)
     bus.send(msg)
@@ -85,22 +87,25 @@ def from_int32_to_bytes(data):
 def receive_frame(period, bus):
     recv_msg = bus.recv(timeout=period)
 
-    if recv_msg == None:
-        return None
+    if recv_msg is None:
+        return None, None
 
-    motor_id = (recv_msg.arbitration_id & 0x00F) - 3
-    print(motor_id)
+    motor_id = (recv_msg.arbitration_id & 0x00F) - 4
+    #print(motor_id)
 
     if motor_id < 0 or motor_id > 3:
-        return None
+        return None, None
 
-    recv_data = ((recv_msg.data[0] << 24) | (recv_msg.data[1] << 16) |
-                 (recv_msg.data[2] << 8) | (recv_msg.data[3]))
+    recv_data = ((recv_msg.data[3] << 24) | (recv_msg.data[2] << 16) |
+                 (recv_msg.data[1] << 8) | (recv_msg.data[0]))
+
+    if (recv_data is None):
+        return None, None
 
     recv_data = struct.pack("<I", recv_data)
     recv_data = struct.unpack("<i", recv_data)[0]
 
-    return motor_id, recv_data
+    return recv_msg.arbitration_id - 4, recv_data
 
 
 def set_stop_mode(can_id, bus):
@@ -162,6 +167,21 @@ def set_goal_pwm(can_id, data, bus):
 
 def set_air(can_id, data, bus):
     table_addr = 12
+    send_packet_1byte(can_id, table_addr, data, bus)
+
+
+def set_motor_rot_dir(can_id, data, bus):
+    table_addr = 13
+    send_packet_1byte(can_id, table_addr, data, bus)
+
+
+def set_profile_vel(can_id, data, bus):
+    table_addr = 14
+    send_packet_4byte(can_id, table_addr, data, bus)
+
+
+def set_profile_accel(can_id, data, bus):
+    table_addr = 15
     send_packet_4byte(can_id, table_addr, data, bus)
 
 
@@ -200,12 +220,16 @@ def send_read_vel_instruction(can_id, bus):
 def read_pos(can_id, bus):
     send_read_pos_instruction(can_id, bus)
     motor_id, recv_data = receive_frame(0.001, bus)
+    if (motor_id is not can_id):
 
-    return motor_id, recv_data
+        return None, None
+    return motor_id, recv_data / 1000.0
 
 
 def read_vel(can_id, bus):
     send_read_vel_instruction(can_id, bus)
     motor_id, recv_data = receive_frame(0.001, bus)
+    if (motor_id is not can_id):
+        return None, None
 
-    return motor_id, recv_data
+    return motor_id, recv_data / 1000.0

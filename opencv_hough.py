@@ -5,15 +5,26 @@
 
 import cv2
 import numpy as np
-import time
 import math
+import time
+
+cam_resolution = [640, 480]
 
 
 def capture_single_frame(device_id=0):
     cap = cv2.VideoCapture(device_id)
+
     if not cap.isOpened():
         print("カメラが見つかりません")
         return None
+
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, cam_resolution[0])
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cam_resolution[1])
+
+    width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+    height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    print(f"解像度: {width} x {height}")
+
     for _ in range(10):
         cap.read()
 
@@ -143,7 +154,6 @@ def img_to_cam(x, y, s, obj_x, obj_y):
     # obj_x,obj_y: オブジェクトのワールド座標
     # x_cam,y_cam: 台の上座標系でのカメラ位置(台の右下をodomの原点として取る)
 
-    cam_resolution = [640, 480]
     calib_x = cam_resolution[0] / 2
     calib_y = cam_resolution[1] / 2
 
@@ -158,15 +168,44 @@ def img_to_cam(x, y, s, obj_x, obj_y):
     return x_cam_in_odom, y_cam_in_odom
 
 
+def cam_to_odom(x_cam_in_odom, y_cam_in_odom, final_slope, cam_to_wheel_x,
+                cam_to_wheel_y):
+    #x_cam_in_odom: カメラのodom座標上での位置
+    #final_slope: 車体yaw角度
+    #cam_to_wheel_x: カメラから車体中心
+
+    sin, cos = np.sin(np.deg2rad(final_slope)), np.cos(np.deg2rad(final_slope))
+
+    rot = np.array([
+        [cos, sin],
+        [-sin, cos],
+    ])
+
+    #座標系が逆
+    vec = np.array([cam_to_wheel_y, cam_to_wheel_x])
+
+    carib = np.dot(rot, vec)
+
+    odom_x = x_cam_in_odom - carib[1]
+    odom_y = y_cam_in_odom - carib[0]
+
+    return odom_x, odom_y
+
+
 def calc_correct_pos():
 
     # ---params---
-    cam_to_wheel_length = 560
+    s = (40 / 65)  # s: スケーリング係数 [mm/px]
+    obj_x = 740  #右上白線中心の位置
+    obj_y = 435
+    cam_to_wheel_x = 420  #カメラから車体中心
+    cam_to_wheel_y = 85
 
     #path_img = "/home/aratahorie/test_code/img/kado.jpg"
     path_img = "/home/aratahorie/migikado.jpg"
     #img = cv2.imread(path_img)
-    img = capture_single_frame(2)
+    camera_path = "/dev/v4l/by-path/pci-0000:00:14.0-usb-0:4:1.3-video-index0"
+    img = capture_single_frame(camera_path)
     if (img is None):
         return None
 
@@ -180,6 +219,7 @@ def calc_correct_pos():
     binary = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                    cv2.THRESH_BINARY, 31, 15)
     edges = cv2.Canny(binary, 50, 150)
+    #直線検出
     lines = cv2.HoughLinesP(edges,
                             1,
                             np.pi / 180,
@@ -187,41 +227,47 @@ def calc_correct_pos():
                             minLineLength=40,
                             maxLineGap=20)
 
+    #縦直線と横直線を分ける
     v_lines, h_lines = sort_by_angle(lines)
+    #横直線を、下側、上側で分ける
     h_lines_down, h_lines_up = select_h(h_lines)
+    #縦直線を、右側、左側で分ける
     v_lines_right, v_lines_left = select_v(v_lines)
 
+    #直線を平均して一本にする
     h_lines_down_mean = np.mean((h_lines_down), axis=0).astype(int)
     h_lines_up_mean = np.mean((h_lines_up), axis=0).astype(int)
     v_lines_right_mean = np.mean((v_lines_right), axis=0).astype(int)
     v_lines_left_mean = np.mean((v_lines_left), axis=0).astype(int)
 
+    #各直線の交点を検出する
     px_1, py_1 = calc_intersection(v_lines_right_mean, h_lines_down_mean)
     px_2, py_2 = calc_intersection(v_lines_left_mean, h_lines_down_mean)
     px_3, py_3 = calc_intersection(v_lines_right_mean, h_lines_up_mean)
     px_4, py_4 = calc_intersection(v_lines_left_mean, h_lines_up_mean)
 
+    #ボックス中心点を求める
     x_mean = int((px_3 + px_4) / 2)
     y_mean = int((py_2 + py_4) / 2)
 
+    #傾きを求める
     h_lines_down_slope = calc_line_slope(h_lines_down_mean)
     v_lines_right_slope = calc_line_slope(v_lines_right_mean)
-
     if (v_lines_right_slope < 0):
         v_lines_right_slope += 90
     elif (v_lines_right_slope > 0):
         v_lines_right_slope += -90
 
+    #車体の傾きを求める
     final_slope = (h_lines_down_slope + (v_lines_right_slope)) / 2
 
-    s = (40 / 70)
-    x_cam_in_odom, y_cam_in_odom = img_to_cam(x_mean, y_mean, s, 760, 450)
+    #カメラ画像からカメラの位置を変換する
+    x_cam_in_odom, y_cam_in_odom = img_to_cam(x_mean, y_mean, s, obj_x, obj_y)
 
-    #カメラから車輪までの変換
-    odom_x = x_cam_in_odom - cam_to_wheel_length * math.cos(
-        math.radians(final_slope))
-    odom_y = y_cam_in_odom - cam_to_wheel_length * math.sin(
-        math.radians(final_slope))
+    #カメラ位置から車輪までの変換
+
+    odom_x, odom_y = cam_to_odom(x_cam_in_odom, y_cam_in_odom, final_slope,
+                                 cam_to_wheel_x, cam_to_wheel_y)
 
     #-----------描画----------------
     print("水平下", h_lines_down_mean)
@@ -251,5 +297,6 @@ def calc_correct_pos():
     return odom_x * 0.001, odom_y * 0.001, final_slope
 
 
+#実行時は
 if __name__ == "__main__":
     calc_correct_pos()
